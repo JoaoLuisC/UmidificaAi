@@ -1,74 +1,65 @@
-#include <DHT.h>  // Inclui a biblioteca DHT Sensor Library
+#include <DHT.h>
 #define DHTPIN 2  // Pino digital 2 conectado ao DHT11
-#define DHTTYPE DHT11  // DHT 11
+#define DHTTYPE DHT11  // Tipo do sensor DHT
 
-DHT dht(DHTPIN, DHTTYPE);  // Inicializando o objeto dht do tipo DHT passando como parâmetro o pino (DHTPIN) e o tipo do sensor (DHTTYPE)
+DHT dht(DHTPIN, DHTTYPE);
 
-float vetCorrente[300];
+double maior_Valor = 0, valor_Corrente = 0, valor_Atual = 0, energia_gasta = 0;
+float tensao = 127, potencia = 0;
+unsigned long tempo_inicio = 0, tempo_total = 0;
 
 void setup() {
-  Serial.begin(9600);  // Inicializa a comunicação serial
-  dht.begin();          // Inicializa o sensor DHT11
+  Serial.begin(9600);
+  dht.begin();
   pinMode(7, OUTPUT);
   pinMode(A0, INPUT);
 }
 
 void loop() {
-  // Liga o relé
-  digitalWrite(7, HIGH);
-
-  // Medições de umidade e temperatura
-  float h = dht.readHumidity();      // Lê o valor da umidade
-  float t = dht.readTemperature();   // Lê o valor da temperatura
-
-  if (!isnan(h) && !isnan(t)) {      // Verifica se os valores de umidade e temperatura são válidos
-    Serial.print("Umidade: ");
-    Serial.print(h);
-    Serial.println("%");
-
-    Serial.print("Temperatura: ");
-    Serial.print(t);
-    Serial.println("°C");
-  } else {
-    Serial.println("Erro ao ler o sensor de umidade/temperatura.");
-  }
-
-  // Coleta de corrente durante os 20 segundos de relé ligado
-  double maior_Valor = 0;
-  double valor_Corrente = 0;
-  float tensao = 127;
-  float potencia = 0;
-
-  for (int i = 0; i < 300; i++) {
-    vetCorrente[i] = analogRead(A0);
-    delay(17);  // Aproximadamente 300 leituras em 20 segundos
-  }
-
-  // Calcula o maior valor de corrente medido
-  for (int i = 0; i < 300; i++) {
-    if (maior_Valor < vetCorrente[i]) {
-      maior_Valor = vetCorrente[i];
-    }
-  }
-
-  // Processa a corrente e calcula a potência
-  maior_Valor = maior_Valor * 0.004882812;  // Conversão para volts
-  valor_Corrente = maior_Valor - 2.5;       // Ajuste para ponto zero
-  valor_Corrente = valor_Corrente * 1000;
-  valor_Corrente = valor_Corrente / 66;     // Sensibilidade: 66mV/A para ACS712 30A
-  valor_Corrente = valor_Corrente / 1.41421356; // Conversão para RMS
+  float umidade = dht.readHumidity();
   
-  // Exibe a corrente e potência calculadas
-  Serial.print("Corrente = ");
-  Serial.print(valor_Corrente);
-  Serial.println(" A");
+  if (umidade <= 40) {
+    digitalWrite(7, HIGH);  // Liga o umidificador
 
-  potencia = valor_Corrente * tensao;
-  Serial.print("Potencia = ");
-  Serial.print(potencia);
-  Serial.println(" W");
-  delay(5000);
-  // Desliga o relé e aguarda 20 segundos antes de repetir o ciclo
-  digitalWrite(7, LOW);
-  delay(5000);
+    if (tempo_inicio == 0) {
+        tempo_inicio = millis();  
+    }
+
+    valor_Atual = analogRead(A0);
+    delay(17);
+
+    maior_Valor = valor_Atual * 0.004882812;
+    valor_Corrente = (maior_Valor - 2.5) * 1000 / 66 / 1.41421356;  // Sensibilidade: 66mV/A para ACS712 30A | Conversão para RMS
+    potencia = valor_Corrente * tensao;
+
+    // Calcular o tempo de operação em horas
+    float tempo_horas = (millis() - tempo_inicio) / 3600000.0;
+    energia_gasta += potencia * tempo_horas;
+
+    tempo_total += tempo_horas; 
+    tempo_inicio = millis(); 
+
+    // Enquanto estiver operando, imprime a umidade na tela
+    Serial.print("Umidade do ar no momento (%): ");
+    Serial.println(umidade);
+
+  } 
+  else if (umidade >= 60) {
+    digitalWrite(7, LOW);  // Desliga o umidificador
+    tempo_inicio = 0;  
+  
+    Serial.println("----- Relatório do Umidificador -----");
+    Serial.print("Umidade do ar no momento (%): ");
+    Serial.println(umidade);
+    Serial.print("Energia gasta (kWh): ");
+    Serial.println(energia_gasta);
+    Serial.print("Tempo de operação (horas): ");
+    Serial.println(tempo_total);  
+    Serial.println("-------------------------------------");
+  } 
+  else {
+    digitalWrite(7, LOW);  
+    Serial.print("Umidade do ar no momento (%): "); //trocar para printar no lcd o tanto que ta no momento e quando te potencia que ta gastando
+    Serial.println(umidade);
+  }
 }
